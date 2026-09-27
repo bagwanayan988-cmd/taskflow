@@ -1,0 +1,92 @@
+# Render Blueprint: deploys all four TaskFlow components from this repository.
+# Render dashboard -> New -> Blueprint -> pick this repo -> Apply.
+#
+# Public URLs follow the service names below: https://<name>.onrender.com
+# If Render reports that a name is taken, it gives that service a different URL. Then update the
+# *_URL / *_ORIGIN values below (or in each service's Environment tab) to the URLs Render shows.
+
+envVarGroups:
+  - name: taskflow-shared
+    envVars:
+      # Random 256-bit value generated once by Render and shared by user-service (signs JWTs)
+      # and task-service (verifies them). Never committed to the repository.
+      - key: JWT_SECRET
+        generateValue: true
+
+services:
+  # ---------------------------------------------------------------- user-service
+  - type: web
+    name: taskflow-ayan-users
+    runtime: docker
+    plan: free
+    dockerfilePath: ./user-service/Dockerfile
+    dockerContext: ./user-service
+    buildFilter:
+      paths: ["user-service/**"]
+    envVars:
+      - fromGroup: taskflow-shared
+      - key: H2_CONSOLE_ENABLED
+        value: "false"
+
+  # ---------------------------------------------------------------- task-service
+  - type: web
+    name: taskflow-ayan-tasks
+    runtime: docker
+    plan: free
+    dockerfilePath: ./task-service/Dockerfile
+    dockerContext: ./task-service
+    buildFilter:
+      paths: ["task-service/**"]
+    envVars:
+      - fromGroup: taskflow-shared
+      - key: H2_CONSOLE_ENABLED
+        value: "false"
+      - key: USER_SERVICE_BASE_URL
+        value: https://taskflow-ayan-users.onrender.com
+      # Free services sleep when idle; give a sleeping user-service time to wake up.
+      - key: USER_SERVICE_CONNECT_TIMEOUT
+        value: 10s
+      - key: USER_SERVICE_READ_TIMEOUT
+        value: 60s
+
+  # ---------------------------------------------------------------- api-gateway
+  - type: web
+    name: taskflow-ayan-gateway
+    runtime: docker
+    plan: free
+    dockerfilePath: ./api-gateway/Dockerfile
+    dockerContext: ./api-gateway
+    buildFilter:
+      paths: ["api-gateway/**"]
+    envVars:
+      - key: USER_SERVICE_URL
+        value: https://taskflow-ayan-users.onrender.com
+      - key: TASK_SERVICE_URL
+        value: https://taskflow-ayan-tasks.onrender.com
+      - key: FRONTEND_ORIGIN
+        value: https://taskflow-ayan.onrender.com
+      - key: GATEWAY_CONNECT_TIMEOUT_MS
+        value: "10000"
+      - key: GATEWAY_RESPONSE_TIMEOUT
+        value: 90s
+
+  # ---------------------------------------------------------------- frontend (static site)
+  - type: web
+    name: taskflow-ayan
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: ./frontend/dist
+    buildFilter:
+      paths: ["frontend/**"]
+    routes:
+      # Single-page app: let React Router handle /login, /register, /dashboard on refresh.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: VITE_API_BASE_URL
+        value: https://taskflow-ayan-gateway.onrender.com
+      - key: VITE_API_TIMEOUT_MS
+        value: "100000"

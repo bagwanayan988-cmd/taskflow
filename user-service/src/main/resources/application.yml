@@ -1,0 +1,27 @@
+server:
+  port: ${PORT:8081}
+
+spring:
+  application:
+    name: user-service
+  datasource:
+    url: jdbc:h2:file:./data/userdb
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
+  h2:
+    console:
+      # Handy locally; switched off in deployed environments (H2_CONSOLE_ENABLED=false).
+      enabled: ${H2_CONSOLE_ENABLED:true}
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+app:
+  jwt:
+    # The fallback after ":" is a DEV-ONLY placeholder so the project runs out of the box. It is public
+    # (it's in this repo), so anyone could forge tokens with it: ALWAYS set JWT_SECRET to a random value of
+    # at least 32 bytes outside local development. task-service must be given the same value.
+    secret: ${JWT_SECRET:dev-only-taskflow-jwt-secret-change-me-before-deploying-0123456789}
+    expiration-ms: ${JWT_EXPIRATION_MS:3600000}
