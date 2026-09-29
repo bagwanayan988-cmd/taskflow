@@ -15,6 +15,8 @@ RUN useradd --system --uid 1001 app && chown app /app
 COPY --from=build /build/target/*.jar app.jar
 USER app
 # Fit comfortably in small containers (e.g. 512 MB free tiers).
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+UseSerialGC"
+# TieredStopAtLevel=1 skips the optimizing JIT tier: much less work at startup on tiny CPU shares
+# (free tiers), at a small cost in peak throughput that a demo never reaches.
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

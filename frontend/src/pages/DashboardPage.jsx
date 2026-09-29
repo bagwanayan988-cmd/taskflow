@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getErrorMessage } from '../api/apiError';
+import { fetchUser } from '../api/authApi';
 import { createTask, deleteTask, fetchTasks, updateTask } from '../api/taskApi';
 import Navbar from '../components/Navbar';
 import TaskBoard, { TaskBoardSkeleton } from '../components/TaskBoard';
 import TaskForm from '../components/TaskForm';
 import { useAuth } from '../hooks/useAuth';
 import '../styles/dashboard.css';
+
+const ACCOUNT_RESET_NOTICE =
+  'This demo server was reset and your account no longer exists. Please create an account again.';
 
 function EmptyState({ onStart }) {
   return (
@@ -26,7 +30,7 @@ function EmptyState({ onStart }) {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, expireSession } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [loadState, setLoadState] = useState('loading'); // 'loading' | 'ready' | 'error'
   const [loadError, setLoadError] = useState('');
@@ -51,6 +55,14 @@ export default function DashboardPage() {
       ignore = true;
     };
   }, [reloadKey]);
+
+  // Demo deployments can wipe their data on restart: a still-valid token may then point at an account that
+  // no longer exists, so confirm it once and send the person to sign up again instead of failing later.
+  useEffect(() => {
+    fetchUser(user.id).catch((error) => {
+      if (error.response?.status === 404) expireSession(ACCOUNT_RESET_NOTICE);
+    });
+  }, [user.id, expireSession]);
 
   function handleRetry() {
     setLoadState('loading');

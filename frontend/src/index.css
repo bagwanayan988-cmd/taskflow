@@ -342,6 +342,33 @@ select.input {
   color: var(--muted);
 }
 
+.wake-banner {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  z-index: 50;
+  transform: translateX(-50%);
+  width: min(560px, calc(100% - 2rem));
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: #e6e8ef;
+  font-size: 0.9rem;
+  box-shadow: 0 10px 30px -10px rgb(22 24 29 / 0.45);
+}
+
+.wake-banner strong {
+  color: #ffffff;
+}
+
+.wake-banner .spinner {
+  flex-shrink: 0;
+  color: #8f9cff;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

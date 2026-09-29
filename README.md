@@ -371,7 +371,8 @@ TaskFlow/
 │   └── src/
 │       ├── main/java/com/taskflow/userservice/
 │       │   ├── UserServiceApplication.java
-│       │   ├── config/        JwtProperties, SecurityConfig (BCrypt, stateless, public auth routes)
+│       │   ├── config/        JwtProperties, SecurityConfig (BCrypt, stateless, public auth routes),
+│       │   │                  UserIdSequenceInitializer (ids never reused after a data reset)
 │       │   ├── controller/    AuthController, UserController
 │       │   ├── dto/           RegisterRequest, LoginRequest, UserResponse, AuthResponse, ErrorResponse
 │       │   ├── entity/        User
@@ -412,11 +413,12 @@ TaskFlow/
     ├── package.json  vite.config.js  index.html  .env.example
     └── src/
         ├── main.jsx  App.jsx  index.css
-        ├── api/          axiosClient (interceptors), authApi, taskApi, tokenStorage, apiError
+        ├── api/          axiosClient (interceptors, cold-start retries), authApi, taskApi, systemApi,
+        │                 tokenStorage, apiError
         ├── context/      AuthContext (provider), auth-context (context object)
         ├── hooks/        useAuth
         ├── components/   ProtectedRoute, GuestRoute, Navbar, TaskForm, TaskBoard, TaskCard,
-        │                 AuthLayout, FormField, FullPageLoader, Logo
+        │                 AuthLayout, FormField, FullPageLoader, Logo, ServerWakeBanner
         ├── pages/        LoginPage, RegisterPage, DashboardPage
         ├── constants/    taskStatus
         ├── utils/        validation, formatDate
@@ -473,6 +475,7 @@ Every setting has a working local default, so nothing needs configuring to run l
 | `GATEWAY_CONNECT_TIMEOUT_MS` / `GATEWAY_RESPONSE_TIMEOUT` | api-gateway | `2000` / `10s` | Timeouts for calls to the services |
 | `VITE_API_BASE_URL` | frontend | `http://localhost:8080` | Gateway URL (see `frontend/.env.example`) |
 | `VITE_API_TIMEOUT_MS` | frontend | `15000` | Request timeout in the browser |
+| `VITE_WAKE_RETRY_WINDOW_MS` | frontend | `0` (off) | How long to retry safe requests while sleeping services wake (Render: `180000`) |
 
 > ⚠️ The default `JWT_SECRET` in `application.yml` is named `dev-only-...change-me-before-deploying...` on purpose. It is public, so anyone could forge tokens with it. Always set your own `JWT_SECRET` outside local development, for example: `export JWT_SECRET=$(openssl rand -base64 48)`
 
@@ -553,8 +556,15 @@ The repository includes a [Render Blueprint](https://render.com/docs/infrastruct
 
 **Free-tier behaviour to expect**
 
-- **Slow first request.** Services sleep after about 15 minutes idle. The first request afterwards takes about a minute while they wake up, and the app waits instead of failing.
-- **Data resets when services restart or wake from sleep,** because H2 writes to the container's temporary disk. If you get logged out or see "user does not exist" after a while, just register again.
+- **Slow first request.** Services sleep after about 15 minutes idle, and a sleeping Spring Boot service takes roughly 1–2 minutes to start. The frontend is built for this:
+  - **Wakes everything at once.** On page load it pings every service through the gateway, so they all start booting in parallel.
+  - **Retries safe requests.** While services wake, loading tasks, updates, deletes and login are retried automatically for up to 3 minutes, with a "Waking up the servers…" banner.
+  - **Never repeats a create.** Creating a task or an account is never retried, so nothing is saved twice.
+
+  Retries are enabled only in deployed builds (`VITE_WAKE_RETRY_WINDOW_MS`); locally they are off. The Docker images also run the JVM with `-XX:TieredStopAtLevel=1` to cut startup time on small CPUs.
+- **Data resets when services restart or wake from sleep,** because H2 writes to the container's temporary disk. Two safeguards make this harmless:
+  - **User ids are never reused.** user-service starts each empty database's id sequence at the current epoch millisecond, so a token from before a reset can never match a new person's account.
+  - **Old sessions are detected.** When the dashboard sees that the signed-in account no longer exists, it sends you to the login page with "This demo server was reset…".
 
 The same setup was tested locally before release by running the production jars with these environment variables on different ports, against a production build of the frontend. The Docker images themselves are built by Render.
 

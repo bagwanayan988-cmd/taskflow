@@ -9,7 +9,7 @@ import { validateLogin } from '../utils/validation';
 import '../styles/auth.css';
 
 export default function LoginPage() {
-  const { login, sessionExpired } = useAuth();
+  const { login, sessionNotice } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { registeredEmail, from } = location.state ?? {};
@@ -54,9 +54,9 @@ export default function LoginPage() {
           Account created. Sign in to get started.
         </div>
       )}
-      {sessionExpired && !formError && (
+      {sessionNotice && !formError && (
         <div className="alert alert-info" role="status">
-          Your session has expired. Please sign in again.
+          {sessionNotice}
         </div>
       )}
       {formError && (
