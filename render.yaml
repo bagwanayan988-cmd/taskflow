@@ -12,6 +12,12 @@ envVarGroups:
       # and task-service (verifies them). Never committed to the repository.
       - key: JWT_SECRET
         generateValue: true
+      # Accounts and tasks live in PostgreSQL, because Render's free disks are wiped on every restart.
+      # Add these three to this group in the Render dashboard (Env Groups -> taskflow-shared); they are
+      # secrets, so they are never committed. Without them the services fall back to temporary H2 data.
+      #   DB_URL       jdbc:postgresql://<host>/<database>?sslmode=require
+      #   DB_USERNAME  <database user>
+      #   DB_PASSWORD  <database password>
 
 services:
   # ---------------------------------------------------------------- user-service
@@ -27,6 +33,9 @@ services:
       - fromGroup: taskflow-shared
       - key: H2_CONSOLE_ENABLED
         value: "false"
+      # Each service owns its own schema in the shared PostgreSQL database.
+      - key: DB_SCHEMA
+        value: users_service
 
   # ---------------------------------------------------------------- task-service
   - type: web
@@ -41,6 +50,9 @@ services:
       - fromGroup: taskflow-shared
       - key: H2_CONSOLE_ENABLED
         value: "false"
+      # Each service owns its own schema in the shared PostgreSQL database.
+      - key: DB_SCHEMA
+        value: tasks_service
       - key: USER_SERVICE_BASE_URL
         value: https://taskflow-ayan-users.onrender.com
       # Free services sleep when idle; give a sleeping user-service time to wake up.

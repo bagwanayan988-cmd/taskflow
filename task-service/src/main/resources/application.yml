@@ -5,9 +5,16 @@ spring:
   application:
     name: task-service
   datasource:
-    url: jdbc:h2:file:./data/taskdb
+    # Local development: an H2 file database. Deployed: set DB_URL to a PostgreSQL JDBC URL, because free
+    # hosts wipe the disk on every restart and H2 data would be lost (see README "Deployment").
+    url: ${DB_URL:jdbc:h2:file:./data/taskdb}
     username: ${DB_USERNAME:sa}
     password: ${DB_PASSWORD:}
+    hikari:
+      # This service's own schema. When both services share one PostgreSQL database, each still owns
+      # separate tables that the other never touches. H2 uses its default schema.
+      schema: ${DB_SCHEMA:PUBLIC}
+      maximum-pool-size: ${DB_POOL_SIZE:5}
   h2:
     console:
       # Handy locally; switched off in deployed environments (H2_CONSOLE_ENABLED=false).
@@ -16,6 +23,11 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+    properties:
+      hibernate:
+        default_schema: ${DB_SCHEMA:PUBLIC}
+        hbm2ddl:
+          create_namespaces: true
     open-in-view: false
 
 app:

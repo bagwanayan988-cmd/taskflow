@@ -111,7 +111,7 @@ TaskFlow lets people register, sign in and manage their own tasks on a three-col
 | Gateway | Spring Cloud Gateway 2025.0 (reactive / WebFlux) |
 | Auth | JWT via jjwt 0.13 (HMAC-SHA), BCrypt (Spring Security) |
 | HTTP client | Spring `RestClient` on the JDK `HttpClient` |
-| Database | H2 (file-based, one database per service) |
+| Database | H2 locally (one file database per service); PostgreSQL when deployed (one schema per service) |
 | Build | Maven, via the Maven Wrapper included in each module |
 | Frontend | React 19, Vite, React Router 7, Axios |
 | Styling | Hand-written CSS with design tokens; Bricolage Grotesque + IBM Plex Sans (self-hosted with Fontsource) |
@@ -200,6 +200,8 @@ Each service owns a separate H2 file database, created on first start (`ddl-auto
 | task-service | `jdbc:h2:file:./data/taskdb` | `task-service/data/taskdb.mv.db` | `tasks` (indexed on `user_id`) |
 
 The paths are relative to the directory the service is started from, so start each service from its own folder (as shown below). Data survives restarts. Delete a service's `data/` folder to reset it.
+
+When deployed, `DB_URL` switches both services to PostgreSQL (see [Deployment](#deployment-render)). Each service then creates and owns its own schema, `users_service` or `tasks_service`, with the same tables.
 
 ### Opening the H2 consoles
 
@@ -468,7 +470,10 @@ Every setting has a working local default, so nothing needs configuring to run l
 | `USER_SERVICE_URL` | api-gateway | `http://localhost:8081` | Route target for `/api/auth/**`, `/api/users/**` |
 | `TASK_SERVICE_URL` | api-gateway | `http://localhost:8082` | Route target for `/api/tasks/**` |
 | `FRONTEND_ORIGIN` | api-gateway | `http://localhost:5173` | Allowed CORS origin |
-| `DB_USERNAME` / `DB_PASSWORD` | both services | `sa` / *(empty)* | H2 credentials |
+| `DB_URL` | both services | H2 file in `./data/` | JDBC URL. Deployed: a PostgreSQL URL such as `jdbc:postgresql://<host>/<db>?sslmode=require` |
+| `DB_USERNAME` / `DB_PASSWORD` | both services | `sa` / *(empty)* | Database credentials |
+| `DB_SCHEMA` | both services | `PUBLIC` | The service's own schema, created on startup (Render: `users_service` / `tasks_service`) |
+| `DB_POOL_SIZE` | both services | `5` | Maximum database connections per service |
 | `H2_CONSOLE_ENABLED` | both services | `true` | Set to `false` in deployments |
 | `PORT` | all three Java apps | `8081` / `8082` / `8080` | HTTP port (hosting platforms set this) |
 | `USER_SERVICE_CONNECT_TIMEOUT` / `USER_SERVICE_READ_TIMEOUT` | task-service | `2s` / `3s` | Timeouts for the call to user-service |
@@ -537,7 +542,15 @@ The repository includes a [Render Blueprint](https://render.com/docs/infrastruct
 1. Push this repository to GitHub.
 2. Sign in to [Render](https://dashboard.render.com) with GitHub. On the free tier, no credit card is needed.
 3. Click **New → Blueprint**, select the repository, and click **Apply**. Render builds and starts all four services. The first build takes about 5–10 minutes.
-4. Open the frontend URL.
+4. **Add a permanent database** (free, about 3 minutes). Without it the services run on temporary H2 data that is wiped whenever Render restarts them:
+   1. Create a free PostgreSQL database at [neon.tech](https://neon.tech) (no credit card).
+   2. In Neon, click **Connect** and note the host, database name, user and password.
+   3. In Render, open **Env Groups → taskflow-shared** and add:
+      - `DB_URL` = `jdbc:postgresql://<host>/<database>?sslmode=require`
+      - `DB_USERNAME` = the user
+      - `DB_PASSWORD` = the password
+   4. Save. Render redeploys user-service and task-service, and each creates its own schema and tables.
+5. Open the frontend URL.
 
 **What the Blueprint sets up**
 
@@ -562,7 +575,8 @@ The repository includes a [Render Blueprint](https://render.com/docs/infrastruct
   - **Never repeats a create.** Creating a task or an account is never retried, so nothing is saved twice.
 
   Retries are enabled only in deployed builds (`VITE_WAKE_RETRY_WINDOW_MS`); locally they are off. The Docker images also run the JVM with `-XX:TieredStopAtLevel=1` to cut startup time on small CPUs.
-- **Data resets when services restart or wake from sleep,** because H2 writes to the container's temporary disk. Two safeguards make this harmless:
+- **Gateway reports a sleeping service as `502`, not `500`.** While a service boots, the gateway's connection to it can be refused or dropped. The gateway answers `502 Bad Gateway` for these network failures, so the frontend recognises them and keeps retrying instead of showing an error.
+- **Data is permanent once `DB_URL` points to PostgreSQL** (step 4). Both services share one database, but each owns its own schema (`users_service`, `tasks_service`) and never reads the other's tables. Without `DB_URL`, data lives in H2 on the temporary disk and resets on every restart. Two safeguards keep that fallback harmless:
   - **User ids are never reused.** user-service starts each empty database's id sequence at the current epoch millisecond, so a token from before a reset can never match a new person's account.
   - **Old sessions are detected.** When the dashboard sees that the signed-in account no longer exists, it sends you to the login page with "This demo server was reset…".
 
@@ -638,10 +652,10 @@ To see the service-to-service call in action, stop user-service and repeat step 
 These are deliberate simplifications for a local portfolio project:
 
 - **`GET /api/users/{id}` is public and routed through the gateway**, so anyone who can reach the gateway can look up a user's name and email by id. In production it would be internal-only, either not routed or protected by service-to-service authentication.
-- **The gateway's own errors use Spring's default format.** An unmatched route returns `404` and an unreachable downstream service returns `500` in Spring's default error JSON, not TaskFlow's `ErrorResponse` shape, because the gateway contains configuration only.
+- **The gateway's own errors are minimal.** An unreachable downstream service returns `502` with TaskFlow's error JSON (without `fieldErrors`); an unmatched route returns `404` in Spring's default error format.
 - **403 vs 404 reveals whether a task id exists.** A caller probing ids can tell "someone else's task" (`403`) from "no such task" (`404`). Returning `404` for both would hide this.
 - **H2 consoles are enabled locally** for convenience. The Render Blueprint turns them off (`H2_CONSOLE_ENABLED=false`).
-- **Deployed data is temporary.** On Render's free tier, a service's disk is wiped whenever it restarts or wakes from sleep, so accounts and tasks reset. That's fine for a demo; persistent data needs a hosted database (see below).
+- **One PostgreSQL database, two schemas.** In the deployed setup both services share one free Neon database with a schema each, using the same credentials. Full isolation would give each service its own database and database user.
 - **Tokens are stored in `localStorage`**, which is simple but readable by any script on the page. See the improvements below.
 
 ---
@@ -649,12 +663,12 @@ These are deliberate simplifications for a local portfolio project:
 ## Future improvements
 
 - **Refresh tokens:** short-lived access tokens plus a rotating refresh token in an `HttpOnly` cookie, instead of one long-lived token in `localStorage`.
-- **A real database:** PostgreSQL with Flyway migrations, still one database (or schema) per service, instead of H2 with `ddl-auto`.
+- **Database migrations:** Flyway instead of `ddl-auto: update`, and a separate PostgreSQL database and user per service.
 - **Docker Compose:** start all four components with one command, with health checks and the right start order.
 - **Authentication at the gateway:** validate JWTs once at the edge and forward trusted identity headers, keeping per-resource authorization in the services.
 - **Internal-only user lookup:** remove `/api/users/**` from public routes and secure service-to-service calls (for example, mutual TLS or a service token).
 - **Rate limiting:** on login and register at the gateway, to slow down brute-force attempts.
-- **Resilience:** a circuit breaker and retries (Resilience4j) around the user-service call, plus consistent `503` JSON from the gateway.
+- **Resilience:** a circuit breaker and retries (Resilience4j) around the user-service call, plus a retry filter at the gateway for idempotent requests.
 - **Service discovery and config:** Eureka or Consul and Spring Cloud Config, once there are more services or instances.
 - **Automated tests in CI:** controller and service tests, Testcontainers integration tests, and Playwright end-to-end tests running on GitHub Actions.
 - **Task features:** due dates, priorities, drag-and-drop between columns, search and pagination.
