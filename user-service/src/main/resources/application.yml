@@ -11,9 +11,6 @@ spring:
     username: ${DB_USERNAME:sa}
     password: ${DB_PASSWORD:}
     hikari:
-      # This service's own schema. When both services share one PostgreSQL database, each still owns
-      # separate tables that the other never touches. H2 uses its default schema.
-      schema: ${DB_SCHEMA:PUBLIC}
       maximum-pool-size: ${DB_POOL_SIZE:5}
   h2:
     console:
@@ -25,6 +22,10 @@ spring:
       ddl-auto: update
     properties:
       hibernate:
+        # This service's own schema, created on startup. When both services share one PostgreSQL
+        # database, each still owns separate tables that the other never touches. H2 uses PUBLIC.
+        # Every table name is qualified with it; a per-connection search_path is not used, because
+        # poolers such as Neon's PgBouncer don't keep one.
         default_schema: ${DB_SCHEMA:PUBLIC}
         hbm2ddl:
           create_namespaces: true
