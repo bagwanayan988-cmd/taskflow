@@ -106,3 +106,7 @@ services:
         value: "60000"
       - key: VITE_WAKE_RETRY_WINDOW_MS
         value: "180000"
+      # Sleeping free services are only woken by traffic from the internet, not by the gateway's calls
+      # from inside Render, so the browser pings each service directly (no data, see systemApi.js).
+      - key: VITE_WAKE_URLS
+        value: https://taskflow-ayan-gateway.onrender.com,https://taskflow-ayan-users.onrender.com,https://taskflow-ayan-tasks.onrender.com

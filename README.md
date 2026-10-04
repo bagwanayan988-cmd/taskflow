@@ -480,6 +480,7 @@ Every setting has a working local default, so nothing needs configuring to run l
 | `GATEWAY_CONNECT_TIMEOUT_MS` / `GATEWAY_RESPONSE_TIMEOUT` | api-gateway | `2000` / `10s` | Timeouts for calls to the services |
 | `VITE_API_BASE_URL` | frontend | `http://localhost:8080` | Gateway URL (see `frontend/.env.example`) |
 | `VITE_API_TIMEOUT_MS` | frontend | `15000` | Request timeout in the browser |
+| `VITE_WAKE_URLS` | frontend | *(empty)* | Comma-separated public service URLs the browser pings to wake them (Render only) |
 | `VITE_WAKE_RETRY_WINDOW_MS` | frontend | `0` (off) | How long to retry safe requests while sleeping services wake (Render: `180000`) |
 
 > ⚠️ The default `JWT_SECRET` in `application.yml` is named `dev-only-...change-me-before-deploying...` on purpose. It is public, so anyone could forge tokens with it. Always set your own `JWT_SECRET` outside local development, for example: `export JWT_SECRET=$(openssl rand -base64 48)`
@@ -570,7 +571,8 @@ The repository includes a [Render Blueprint](https://render.com/docs/infrastruct
 **Free-tier behaviour to expect**
 
 - **Slow first request.** Services sleep after about 15 minutes idle, and a sleeping Spring Boot service takes roughly 1–2 minutes to start. The frontend is built for this:
-  - **Wakes everything at once.** On page load it pings every service through the gateway, so they all start booting in parallel.
+  - **Wakes every service from the browser.** Render only wakes a sleeping free service for traffic from the internet. The gateway's calls come from inside Render and get a `502` (`x-render-routing: no-deploy`) instead. So on page load the browser pings the gateway, user-service and task-service directly (`VITE_WAKE_URLS`, `mode: 'no-cors'`, no data), and they all boot in parallel. All API calls still go through the gateway.
+  - **Keeps them awake while in use.** While the tab is visible and someone is using it, the pings repeat every 5 minutes, and also when the tab comes back into view or a request finds a service asleep.
   - **Retries safe requests.** While services wake, loading tasks, updates, deletes and login are retried automatically for up to 3 minutes, with a "Waking up the servers…" banner.
   - **Never repeats a create.** Creating a task or an account is never retried, so nothing is saved twice.
 
